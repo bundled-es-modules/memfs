@@ -11027,7 +11027,6 @@ var require_lib = __commonJS({
 
 // source.js
 var import_memfs = __toESM(require_lib(), 1);
-var import_process = __toESM(require_browser(), 1);
 var source_default = import_memfs.default;
 export {
   source_default as default
