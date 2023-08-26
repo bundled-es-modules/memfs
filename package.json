@@ -1,6 +1,6 @@
 {
   "name": "@bundled-es-modules/memfs",
-  "version": "4.2.2",
+  "version": "4.2.3",
   "description": "mirror of memfs, bundled and exposed as ES module",
   "author": "Joren Broekema <joren.broekema@gmail.com>",
   "main": "index-esm.js",
@@ -27,6 +27,7 @@
     "events": "^3.3.0",
     "memfs": "^4.2.1",
     "path": "^0.12.7",
+    "process": "^0.11.10",
     "stream": "^0.0.2",
     "util": "^0.12.5"
   },
