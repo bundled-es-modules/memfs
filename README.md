@@ -2,6 +2,8 @@
 
 This is a mirror of [memfs](https://www.npmjs.com/package/memfs), bundled and exposed as ES module.
 
+Also injects a shim for process for browser usage.
+
 ## Install
 
 ```sh
