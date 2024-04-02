@@ -9,10 +9,7 @@ const process = readFileSync("./process.js", "utf-8");
  * Remove when https://github.com/streamich/memfs/pull/977 gets released
  */
 const fileAfter = `${process}
-var Buffer;
-${fileBefore.replace(
-  "exports.Buffer = Buffer2;",
-  "exports.Buffer = Buffer2;\n Buffer = Buffer2;"
-)}`;
+
+${fileBefore}`;
 
 writeFileSync("./index-esm.js", fileAfter);
