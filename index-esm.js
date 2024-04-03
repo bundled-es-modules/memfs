@@ -154,7 +154,7 @@ process.chdir = function(dir) {
 process.umask = function() {
   return 0;
 };
-var Buffer;
+
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -215,6 +215,7 @@ var require_constants = __commonJS({
       O_NOATIME: 262144,
       O_NOFOLLOW: 131072,
       O_SYNC: 1052672,
+      O_SYMLINK: 2097152,
       O_DIRECT: 16384,
       O_NONBLOCK: 2048,
       S_IRWXU: 448,
@@ -274,6 +275,13 @@ var require_Stats = __commonJS({
         const ctimeMs = getStatNumber(ctime.getTime());
         stats.ctimeMs = ctimeMs;
         stats.birthtimeMs = ctimeMs;
+        if (bigint) {
+          stats.atimeNs = BigInt(atime.getTime()) * BigInt(1e6);
+          stats.mtimeNs = BigInt(mtime.getTime()) * BigInt(1e6);
+          const ctimeNs = BigInt(ctime.getTime()) * BigInt(1e6);
+          stats.ctimeNs = ctimeNs;
+          stats.birthtimeNs = ctimeNs;
+        }
         stats.dev = getStatNumber(0);
         stats.mode = getStatNumber(node.mode);
         stats.nlink = getStatNumber(node.nlink);
@@ -502,7 +510,6 @@ var require_buffer = __commonJS({
     var ieee754 = require_ieee754();
     var customInspectSymbol = typeof Symbol === "function" && typeof Symbol["for"] === "function" ? Symbol["for"]("nodejs.util.inspect.custom") : null;
     exports.Buffer = Buffer2;
- Buffer = Buffer2;
     exports.SlowBuffer = SlowBuffer;
     exports.INSPECT_MAX_BYTES = 50;
     var K_MAX_LENGTH = 2147483647;
@@ -6341,6 +6348,7 @@ var require_Dirent = __commonJS({
     var Dirent = class _Dirent {
       constructor() {
         this.name = "";
+        this.path = "";
         this.mode = 0;
       }
       static build(link, encoding) {
@@ -6348,6 +6356,7 @@ var require_Dirent = __commonJS({
         const { mode } = link.getNode();
         dirent.name = (0, encoding_1.strToEncoding)(link.getName(), encoding);
         dirent.mode = mode;
+        dirent.path = link.getPath();
         return dirent;
       }
       _checkModeProperty(property) {
@@ -7424,20 +7433,6 @@ var require_browser = __commonJS({
   }
 });
 
-// node_modules/memfs/lib/setImmediate.js
-var require_setImmediate = __commonJS({
-  "node_modules/memfs/lib/setImmediate.js"(exports) {
-    "use strict";
-    Object.defineProperty(exports, "__esModule", { value: true });
-    var _setImmediate;
-    if (typeof setImmediate === "function")
-      _setImmediate = setImmediate.bind(typeof globalThis !== "undefined" ? globalThis : global);
-    else
-      _setImmediate = setTimeout.bind(typeof globalThis !== "undefined" ? globalThis : global);
-    exports.default = _setImmediate;
-  }
-});
-
 // node_modules/memfs/lib/process.js
 var require_process = __commonJS({
   "node_modules/memfs/lib/process.js"(exports) {
@@ -7458,8 +7453,6 @@ var require_process = __commonJS({
       const p = maybeReturnProcess() || {};
       if (!p.cwd)
         p.cwd = () => "/";
-      if (!p.nextTick)
-        p.nextTick = require_setImmediate().default;
       if (!p.emitWarning)
         p.emitWarning = (message, type) => {
           console.warn(`${type}${type ? ": " : ""}${message}`);
@@ -7999,7 +7992,7 @@ var require_node = __commonJS({
         if (actualLen + pos > this.buf.length) {
           actualLen = this.buf.length - pos;
         }
-        const buf2 = buf instanceof Buffer ? buf : Buffer.from(buf.buffer);
+        const buf2 = buf instanceof buffer_1.Buffer ? buf : buffer_1.Buffer.from(buf.buffer);
         this.buf.copy(buf2, off, pos, pos + actualLen);
         return actualLen;
       }
@@ -8093,7 +8086,7 @@ var require_node = __commonJS({
       // Recursively sync children steps, e.g. in case of dir rename
       set steps(val) {
         this._steps = val;
-        for (const [child, link] of Object.entries(this.children)) {
+        for (const [child, link] of this.children.entries()) {
           if (child === "." || child === "..") {
             continue;
           }
@@ -8102,7 +8095,7 @@ var require_node = __commonJS({
       }
       constructor(vol, parent, name) {
         super();
-        this.children = {};
+        this.children = /* @__PURE__ */ new Map();
         this._steps = [];
         this.ino = 0;
         this.length = 0;
@@ -8122,19 +8115,19 @@ var require_node = __commonJS({
         const link = new _Link(this.vol, this, name);
         link.setNode(node);
         if (node.isDirectory()) {
-          link.children["."] = link;
+          link.children.set(".", link);
           link.getNode().nlink++;
         }
         this.setChild(name, link);
         return link;
       }
       setChild(name, link = new _Link(this.vol, this, name)) {
-        this.children[name] = link;
+        this.children.set(name, link);
         link.parent = this;
         this.length++;
         const node = link.getNode();
         if (node.isDirectory()) {
-          link.children[".."] = this;
+          link.children.set("..", this);
           this.getNode().nlink++;
         }
         this.getNode().mtime = /* @__PURE__ */ new Date();
@@ -8144,19 +8137,17 @@ var require_node = __commonJS({
       deleteChild(link) {
         const node = link.getNode();
         if (node.isDirectory()) {
-          delete link.children[".."];
+          link.children.delete("..");
           this.getNode().nlink--;
         }
-        delete this.children[link.getName()];
+        this.children.delete(link.getName());
         this.length--;
         this.getNode().mtime = /* @__PURE__ */ new Date();
         this.emit("child:delete", link, this);
       }
       getChild(name) {
         this.getNode().mtime = /* @__PURE__ */ new Date();
-        if (Object.hasOwnProperty.call(this.children, name)) {
-          return this.children[name];
-        }
+        return this.children.get(name);
       }
       getPath() {
         return this.steps.join(exports.SEP);
@@ -8195,7 +8186,7 @@ var require_node = __commonJS({
         return {
           steps: this.steps,
           ino: this.ino,
-          children: Object.keys(this.children)
+          children: Array.from(this.children.keys())
         };
       }
       syncSteps() {
@@ -8267,6 +8258,30 @@ var require_node = __commonJS({
       }
     };
     exports.File = File;
+  }
+});
+
+// node_modules/memfs/lib/setImmediate.js
+var require_setImmediate = __commonJS({
+  "node_modules/memfs/lib/setImmediate.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    var _setImmediate;
+    if (typeof setImmediate === "function")
+      _setImmediate = setImmediate.bind(typeof globalThis !== "undefined" ? globalThis : global);
+    else
+      _setImmediate = setTimeout.bind(typeof globalThis !== "undefined" ? globalThis : global);
+    exports.default = _setImmediate;
+  }
+});
+
+// node_modules/memfs/lib/queueMicrotask.js
+var require_queueMicrotask = __commonJS({
+  "node_modules/memfs/lib/queueMicrotask.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.default = typeof queueMicrotask === "function" ? queueMicrotask : (cb) => Promise.resolve().then(() => cb()).catch(() => {
+    });
   }
 });
 
@@ -8490,8 +8505,10 @@ var require_util3 = __commonJS({
     exports.unixify = exports.bufferToEncoding = exports.getWriteSyncArgs = exports.getWriteArgs = exports.bufToUint8 = exports.dataToBuffer = exports.validateFd = exports.isFd = exports.flagsToNumber = exports.genRndStr6 = exports.createError = exports.pathToFilename = exports.nullCheck = exports.modeToNumber = exports.validateCallback = exports.promisify = exports.isWin = void 0;
     var constants_1 = require_constants2();
     var errors = require_errors2();
-    var encoding_1 = require_encoding();
     var buffer_1 = require_buffer2();
+    var encoding_1 = require_encoding();
+    var buffer_2 = require_buffer2();
+    var queueMicrotask_1 = require_queueMicrotask();
     exports.isWin = process.platform === "win32";
     function promisify(fs, fn, getResult = (input) => input) {
       return (...args) => new Promise((resolve, reject) => {
@@ -8531,7 +8548,9 @@ var require_util3 = __commonJS({
         er.code = "ENOENT";
         if (typeof callback !== "function")
           throw er;
-        process.nextTick(callback, er);
+        (0, queueMicrotask_1.default)(() => {
+          callback(er);
+        });
         return false;
       }
       return true;
@@ -8553,7 +8572,7 @@ var require_util3 = __commonJS({
       return decodeURIComponent(pathname);
     }
     function pathToFilename(path) {
-      if (typeof path !== "string" && !Buffer.isBuffer(path)) {
+      if (typeof path !== "string" && !buffer_1.Buffer.isBuffer(path)) {
         try {
           if (!(path instanceof __require("url").URL))
             throw new TypeError(constants_1.ERRSTR.PATH_STR);
@@ -8580,6 +8599,7 @@ var require_util3 = __commonJS({
     var ENOTEMPTY = "ENOTEMPTY";
     var ENOSYS = "ENOSYS";
     var ERR_FS_EISDIR = "ERR_FS_EISDIR";
+    var ERR_OUT_OF_RANGE = "ERR_OUT_OF_RANGE";
     function formatError(errorCode, func = "", path = "", path2 = "") {
       let pathFormatted = "";
       if (path)
@@ -8613,6 +8633,8 @@ var require_util3 = __commonJS({
           return `ENOSYS: function not implemented, ${func}${pathFormatted}`;
         case ERR_FS_EISDIR:
           return `[ERR_FS_EISDIR]: Path is a directory: ${func} returned EISDIR (is a directory) ${path}`;
+        case ERR_OUT_OF_RANGE:
+          return `[ERR_OUT_OF_RANGE]: value out of range, ${func}${pathFormatted}`;
         default:
           return `${errorCode}: error occurred, ${func}${pathFormatted}`;
       }
@@ -8655,12 +8677,12 @@ var require_util3 = __commonJS({
     }
     exports.validateFd = validateFd;
     function dataToBuffer(data, encoding = encoding_1.ENCODING_UTF8) {
-      if (Buffer.isBuffer(data))
+      if (buffer_1.Buffer.isBuffer(data))
         return data;
       else if (data instanceof Uint8Array)
-        return (0, buffer_1.bufferFrom)(data);
+        return (0, buffer_2.bufferFrom)(data);
       else
-        return (0, buffer_1.bufferFrom)(String(data), encoding);
+        return (0, buffer_2.bufferFrom)(String(data), encoding);
     }
     exports.dataToBuffer = dataToBuffer;
     var bufToUint8 = (buf) => new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -8811,6 +8833,9 @@ var require_FileHandle = __commonJS({
       read(buffer, offset, length, position) {
         return (0, util_1.promisify)(this.fs, "read", (bytesRead) => ({ bytesRead, buffer }))(this.fd, buffer, offset, length, position);
       }
+      readv(buffers, position) {
+        return (0, util_1.promisify)(this.fs, "readv", (bytesRead) => ({ bytesRead, buffers }))(this.fd, buffers, position);
+      }
       readFile(options) {
         return (0, util_1.promisify)(this.fs, "readFile")(this.fd, options);
       }
@@ -8828,6 +8853,9 @@ var require_FileHandle = __commonJS({
       }
       write(buffer, offset, length, position) {
         return (0, util_1.promisify)(this.fs, "write", (bytesWritten) => ({ bytesWritten, buffer }))(this.fd, buffer, offset, length, position);
+      }
+      writev(buffers, position) {
+        return (0, util_1.promisify)(this.fs, "writev", (bytesWritten) => ({ bytesWritten, buffers }))(this.fd, buffers, position);
       }
       writeFile(data, options) {
         return (0, util_1.promisify)(this.fs, "writeFile")(this.fd, data, options);
@@ -8896,9 +8924,9 @@ var require_FsPromises = __commonJS({
   }
 });
 
-// node_modules/json-joy/es6/util/print/printTree.js
+// node_modules/memfs/lib/json-joy/util/print/printTree.js
 var require_printTree = __commonJS({
-  "node_modules/json-joy/es6/util/print/printTree.js"(exports) {
+  "node_modules/memfs/lib/json-joy/util/print/printTree.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.printTree = void 0;
@@ -8938,7 +8966,7 @@ var require_util4 = __commonJS({
       return lastSlashIndex === -1 ? path : path.slice(lastSlashIndex + 1);
     };
     exports.basename = basename;
-    var nameRegex = /^(\.{1,2})|(.*(\/|\\).*)$/;
+    var nameRegex = /^(\.{1,2})$|^(.*([\/\\]).*)$/;
     var assertName = (name, method, klass) => {
       const isInvalid = !name || nameRegex.test(name);
       if (isInvalid)
@@ -9065,6 +9093,7 @@ var require_options = __commonJS({
     exports.getReadFileOptions = optsGenerator(readFileOptsDefaults);
     var readdirDefaults = {
       encoding: "utf8",
+      recursive: false,
       withFileTypes: false
     };
     exports.getReaddirOptions = optsGenerator(readdirDefaults);
@@ -9107,6 +9136,7 @@ var require_volume = __commonJS({
     var Dirent_1 = require_Dirent();
     var buffer_1 = require_buffer2();
     var setImmediate_1 = require_setImmediate();
+    var queueMicrotask_1 = require_queueMicrotask();
     var process_1 = require_process();
     var setTimeoutUnref_1 = require_setTimeoutUnref();
     var stream_1 = require_stream();
@@ -9121,9 +9151,10 @@ var require_volume = __commonJS({
     var options_1 = require_options();
     var util_1 = require_util3();
     var resolveCrossPlatform = pathModule.resolve;
-    var { O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_EXCL, O_TRUNC, O_APPEND, O_DIRECTORY, F_OK, COPYFILE_EXCL, COPYFILE_FICLONE_FORCE } = constants_1.constants;
+    var { O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_EXCL, O_TRUNC, O_APPEND, O_DIRECTORY, O_SYMLINK, F_OK, COPYFILE_EXCL, COPYFILE_FICLONE_FORCE } = constants_1.constants;
     var { sep, relative, join, dirname } = pathModule.posix ? pathModule.posix : pathModule;
     var kMinPoolSpace = 128;
+    var EPERM = "EPERM";
     var ENOENT = "ENOENT";
     var EBADF = "EBADF";
     var EINVAL = "EINVAL";
@@ -9135,6 +9166,7 @@ var require_volume = __commonJS({
     var ENOTEMPTY = "ENOTEMPTY";
     var ENOSYS = "ENOSYS";
     var ERR_FS_EISDIR = "ERR_FS_EISDIR";
+    var ERR_OUT_OF_RANGE = "ERR_OUT_OF_RANGE";
     var resolve = (filename, base = process_1.default.cwd()) => resolveCrossPlatform(base, filename);
     if (util_1.isWin) {
       const _resolve = resolve;
@@ -9191,7 +9223,7 @@ var require_volume = __commonJS({
         for (const path in node) {
           const contentOrNode = node[path];
           const joinedPath = join(pathPrefix, path);
-          if (typeof contentOrNode === "string") {
+          if (typeof contentOrNode === "string" || contentOrNode instanceof buffer_1.Buffer) {
             flatJSON[joinedPath] = contentOrNode;
           } else if (typeof contentOrNode === "object" && contentOrNode !== null && Object.keys(contentOrNode).length > 0) {
             flatten(joinedPath, contentOrNode);
@@ -9235,14 +9267,10 @@ var require_volume = __commonJS({
         this.cpSync = notImplemented;
         this.lutimesSync = notImplemented;
         this.statfsSync = notImplemented;
-        this.writevSync = notImplemented;
-        this.readvSync = notImplemented;
         this.opendirSync = notImplemented;
         this.cp = notImplemented;
         this.lutimes = notImplemented;
         this.statfs = notImplemented;
-        this.writev = notImplemented;
-        this.readv = notImplemented;
         this.openAsBlob = notImplemented;
         this.opendir = notImplemented;
         this.props = Object.assign({ Node: node_1.Node, Link: node_1.Link, File: node_1.File }, props);
@@ -9434,14 +9462,14 @@ var require_volume = __commonJS({
           callback(null, result);
         });
       }
-      _toJSON(link = this.root, json = {}, path) {
+      _toJSON(link = this.root, json = {}, path, asBuffer) {
         let isEmpty = true;
         let children = link.children;
         if (link.getNode().isFile()) {
-          children = { [link.getName()]: link.parent.getChild(link.getName()) };
+          children = /* @__PURE__ */ new Map([[link.getName(), link.parent.getChild(link.getName())]]);
           link = link.parent;
         }
-        for (const name in children) {
+        for (const name of children.keys()) {
           if (name === "." || name === "..") {
             continue;
           }
@@ -9455,7 +9483,7 @@ var require_volume = __commonJS({
             let filename = child.getPath();
             if (path)
               filename = relative(path, filename);
-            json[filename] = node.getString();
+            json[filename] = asBuffer ? node.getBuffer() : node.getString();
           } else if (node.isDirectory()) {
             this._toJSON(child, json, path);
           }
@@ -9468,10 +9496,10 @@ var require_volume = __commonJS({
         }
         return json;
       }
-      toJSON(paths, json = {}, isRelative = false) {
+      toJSON(paths, json = {}, isRelative = false, asBuffer = false) {
         const links = [];
         if (paths) {
-          if (!(paths instanceof Array))
+          if (!Array.isArray(paths))
             paths = [paths];
           for (const path of paths) {
             const filename = (0, util_1.pathToFilename)(path);
@@ -9486,7 +9514,7 @@ var require_volume = __commonJS({
         if (!links.length)
           return json;
         for (const link of links)
-          this._toJSON(link, json, isRelative ? link.getPath() : "");
+          this._toJSON(link, json, isRelative ? link.getPath() : "", asBuffer);
         return json;
       }
       // TODO: `cwd` should probably not invoke `process.cwd()`.
@@ -9494,7 +9522,7 @@ var require_volume = __commonJS({
         for (let filename in json) {
           const data = json[filename];
           filename = resolve(filename, cwd);
-          if (typeof data === "string") {
+          if (typeof data === "string" || data instanceof buffer_1.Buffer) {
             const dir = dirname(filename);
             this.mkdirpBase(
               dir,
@@ -9589,7 +9617,7 @@ var require_volume = __commonJS({
         const modeNum = (0, util_1.modeToNumber)(mode);
         const fileName = (0, util_1.pathToFilename)(path);
         const flagsNum = (0, util_1.flagsToNumber)(flags);
-        return this.openBase(fileName, flagsNum, modeNum);
+        return this.openBase(fileName, flagsNum, modeNum, !(flagsNum & O_SYMLINK));
       }
       open(path, flags, a, b) {
         let mode = a;
@@ -9602,7 +9630,7 @@ var require_volume = __commonJS({
         const modeNum = (0, util_1.modeToNumber)(mode);
         const fileName = (0, util_1.pathToFilename)(path);
         const flagsNum = (0, util_1.flagsToNumber)(flags);
-        this.wrapAsync(this.openBase, [fileName, flagsNum, modeNum], callback);
+        this.wrapAsync(this.openBase, [fileName, flagsNum, modeNum, !(flagsNum & O_SYMLINK)], callback);
       }
       closeFile(file) {
         if (!this.fds[file.fd])
@@ -9631,8 +9659,14 @@ var require_volume = __commonJS({
         }
       }
       readBase(fd, buffer, offset, length, position) {
+        if (buffer.byteLength < length) {
+          throw (0, util_1.createError)(ERR_OUT_OF_RANGE, "read", void 0, void 0, RangeError);
+        }
         const file = this.getFileByFdOrThrow(fd);
-        return file.read(buffer, Number(offset), Number(length), position);
+        if (file.node.isSymlink()) {
+          throw (0, util_1.createError)(EPERM, "read", file.link.getPath());
+        }
+        return file.read(buffer, Number(offset), Number(length), position === -1 || typeof position !== "number" ? void 0 : position);
       }
       readSync(fd, buffer, offset, length, position) {
         (0, util_1.validateFd)(fd);
@@ -9641,7 +9675,7 @@ var require_volume = __commonJS({
       read(fd, buffer, offset, length, position, callback) {
         (0, util_1.validateCallback)(callback);
         if (length === 0) {
-          return process_1.default.nextTick(() => {
+          return (0, queueMicrotask_1.default)(() => {
             if (callback)
               callback(null, 0, buffer);
           });
@@ -9654,6 +9688,43 @@ var require_volume = __commonJS({
             callback(err);
           }
         });
+      }
+      readvBase(fd, buffers, position) {
+        const file = this.getFileByFdOrThrow(fd);
+        let p = position !== null && position !== void 0 ? position : void 0;
+        if (p === -1) {
+          p = void 0;
+        }
+        let bytesRead = 0;
+        for (const buffer of buffers) {
+          const bytes = file.read(buffer, 0, buffer.byteLength, p);
+          p = void 0;
+          bytesRead += bytes;
+          if (bytes < buffer.byteLength)
+            break;
+        }
+        return bytesRead;
+      }
+      readv(fd, buffers, a, b) {
+        let position = a;
+        let callback = b;
+        if (typeof a === "function") {
+          position = null;
+          callback = a;
+        }
+        (0, util_1.validateCallback)(callback);
+        (0, setImmediate_1.default)(() => {
+          try {
+            const bytes = this.readvBase(fd, buffers, position);
+            callback(null, bytes, buffers);
+          } catch (err) {
+            callback(err);
+          }
+        });
+      }
+      readvSync(fd, buffers, position) {
+        (0, util_1.validateFd)(fd);
+        return this.readvBase(fd, buffers, position);
       }
       readFileBase(id, flagsNum, encoding) {
         let result;
@@ -9694,7 +9765,10 @@ var require_volume = __commonJS({
       }
       writeBase(fd, buf, offset, length, position) {
         const file = this.getFileByFdOrThrow(fd, "write");
-        return file.write(buf, offset, length, position);
+        if (file.node.isSymlink()) {
+          throw (0, util_1.createError)(EBADF, "write", file.link.getPath());
+        }
+        return file.write(buf, offset, length, position === -1 || typeof position !== "number" ? void 0 : position);
       }
       writeSync(fd, a, b, c, d) {
         const [, buf, offset, length, position] = (0, util_1.getWriteSyncArgs)(fd, a, b, c, d);
@@ -9714,6 +9788,44 @@ var require_volume = __commonJS({
             cb(err);
           }
         });
+      }
+      writevBase(fd, buffers, position) {
+        const file = this.getFileByFdOrThrow(fd);
+        let p = position !== null && position !== void 0 ? position : void 0;
+        if (p === -1) {
+          p = void 0;
+        }
+        let bytesWritten = 0;
+        for (const buffer of buffers) {
+          const nodeBuf = buffer_1.Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+          const bytes = file.write(nodeBuf, 0, nodeBuf.byteLength, p);
+          p = void 0;
+          bytesWritten += bytes;
+          if (bytes < nodeBuf.byteLength)
+            break;
+        }
+        return bytesWritten;
+      }
+      writev(fd, buffers, a, b) {
+        let position = a;
+        let callback = b;
+        if (typeof a === "function") {
+          position = null;
+          callback = a;
+        }
+        (0, util_1.validateCallback)(callback);
+        (0, setImmediate_1.default)(() => {
+          try {
+            const bytes = this.writevBase(fd, buffers, position);
+            callback(null, bytes, buffers);
+          } catch (err) {
+            callback(err);
+          }
+        });
+      }
+      writevSync(fd, buffers, position) {
+        (0, util_1.validateFd)(fd);
+        return this.writevBase(fd, buffers, position);
       }
       writeFileBase(id, buf, flagsNum, modeNum) {
         const isUserFd = typeof id === "number";
@@ -10023,35 +10135,38 @@ var require_volume = __commonJS({
         const node = link.getNode();
         if (!node.isDirectory())
           throw (0, util_1.createError)(ENOTDIR, "scandir", filename);
-        if (options.withFileTypes) {
-          const list2 = [];
-          for (const name in link.children) {
-            const child = link.getChild(name);
-            if (!child || name === "." || name === "..") {
-              continue;
-            }
-            list2.push(Dirent_1.default.build(child, options.encoding));
-          }
-          if (!util_1.isWin && options.encoding !== "buffer")
-            list2.sort((a, b) => {
-              if (a.name < b.name)
-                return -1;
-              if (a.name > b.name)
-                return 1;
-              return 0;
-            });
-          return list2;
-        }
         const list = [];
-        for (const name in link.children) {
-          if (name === "." || name === "..") {
+        for (const name of link.children.keys()) {
+          const child = link.getChild(name);
+          if (!child || name === "." || name === "..")
             continue;
+          list.push(Dirent_1.default.build(child, options.encoding));
+          if (options.recursive && child.children.size) {
+            const recurseOptions = Object.assign(Object.assign({}, options), { recursive: true, withFileTypes: true });
+            const childList = this.readdirBase(child.getPath(), recurseOptions);
+            list.push(...childList);
           }
-          list.push((0, encoding_1.strToEncoding)(name, options.encoding));
         }
         if (!util_1.isWin && options.encoding !== "buffer")
-          list.sort();
-        return list;
+          list.sort((a, b) => {
+            if (a.name < b.name)
+              return -1;
+            if (a.name > b.name)
+              return 1;
+            return 0;
+          });
+        if (options.withFileTypes)
+          return list;
+        let filename2 = filename;
+        if (util_1.isWin) {
+          filename2 = filename2.replace(/\\/g, "/");
+        }
+        return list.map((dirent) => {
+          if (options.recursive) {
+            return dirent.path.replace(filename2 + pathModule.posix.sep, "");
+          }
+          return dirent.name;
+        });
       }
       readdirSync(path, options) {
         const opts = (0, options_1.getReaddirOptions)(options);
@@ -10486,7 +10601,9 @@ var require_volume = __commonJS({
       }
       stop() {
         clearTimeout(this.timeoutRef);
-        process_1.default.nextTick(emitStop, this);
+        (0, queueMicrotask_1.default)(() => {
+          emitStop.call(this, this);
+        });
       }
     };
     exports.StatWatcher = StatWatcher;
@@ -10606,7 +10723,7 @@ var require_volume = __commonJS({
           this.once("open", closeOnOpen);
           return;
         }
-        return process_1.default.nextTick(() => this.emit("close"));
+        return (0, queueMicrotask_1.default)(() => this.emit("close"));
       }
       if (typeof ((_a = this._readableState) === null || _a === void 0 ? void 0 : _a.closed) === "boolean") {
         this._readableState.closed = true;
@@ -10733,7 +10850,7 @@ var require_volume = __commonJS({
           this.once("open", closeOnOpen);
           return;
         }
-        return process_1.default.nextTick(() => this.emit("close"));
+        return (0, queueMicrotask_1.default)(() => this.emit("close"));
       }
       if (typeof ((_a = this._writableState) === null || _a === void 0 ? void 0 : _a.closed) === "boolean") {
         this._writableState.closed = true;
@@ -10822,20 +10939,20 @@ var require_volume = __commonJS({
                 removers2.forEach((r) => r());
                 this._listenerRemovers.delete(ino);
               }
-              Object.entries(curLink.children).forEach(([name, childLink]) => {
+              for (const [name, childLink] of curLink.children.entries()) {
                 if (childLink && name !== "." && name !== "..") {
                   removeLinkNodeListeners(childLink);
                 }
-              });
+              }
             };
             removeLinkNodeListeners(l);
             this.emit("change", "rename", relative(this._filename, l.getPath()));
           };
-          Object.entries(link.children).forEach(([name, childLink]) => {
+          for (const [name, childLink] of link.children.entries()) {
             if (childLink && name !== "." && name !== "..") {
               watchLinkNodeChanged(childLink);
             }
-          });
+          }
           link.on("child:add", onLinkChildAdd);
           link.on("child:delete", onLinkChildDelete);
           const removers = (_a = this._listenerRemovers.get(node.ino)) !== null && _a !== void 0 ? _a : [];
@@ -10844,11 +10961,11 @@ var require_volume = __commonJS({
             link.removeListener("child:delete", onLinkChildDelete);
           });
           if (recursive) {
-            Object.entries(link.children).forEach(([name, childLink]) => {
+            for (const [name, childLink] of link.children.entries()) {
               if (childLink && name !== "." && name !== "..") {
                 watchLinkChildrenChanged(childLink);
               }
-            });
+            }
           }
         };
         watchLinkNodeChanged(this._link);
@@ -10909,6 +11026,7 @@ var require_fsSynchronousApiList = __commonJS({
       "readFileSync",
       "readlinkSync",
       "readSync",
+      "readvSync",
       "realpathSync",
       "renameSync",
       "rmdirSync",
@@ -10919,11 +11037,11 @@ var require_fsSynchronousApiList = __commonJS({
       "unlinkSync",
       "utimesSync",
       "writeFileSync",
-      "writeSync"
+      "writeSync",
+      "writevSync"
       // 'cpSync',
       // 'lutimesSync',
       // 'statfsSync',
-      // 'writevSync',
     ];
   }
 });
@@ -10959,6 +11077,7 @@ var require_fsCallbackApiList = __commonJS({
       "mkdtemp",
       "open",
       "read",
+      "readv",
       "readdir",
       "readFile",
       "readlink",
@@ -10975,6 +11094,7 @@ var require_fsCallbackApiList = __commonJS({
       "watch",
       "watchFile",
       "write",
+      "writev",
       "writeFile"
     ];
   }
