@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFile, writeFile, readdir, cp } from "node:fs/promises";
+import { glob } from "glob";
 
-const fileBefore = readFileSync("./index-esm.js", "utf-8");
-const process = readFileSync("./process.js", "utf-8");
+const fileBefore = await readFile("./index-esm.js", "utf-8");
+const process = await readFile("./process.js", "utf-8");
 
 /**
  * Manually fix some issues with process global being unavailable
@@ -12,4 +13,12 @@ const fileAfter = `${process}
 
 ${fileBefore}`;
 
-writeFileSync("./index-esm.js", fileAfter);
+await writeFile("./index-esm.js", fileAfter);
+
+const memfsLibFolder = "node_modules/memfs/lib";
+const dtsFiles = await glob(`./${memfsLibFolder}/**/*.d.ts`);
+await Promise.all(
+  dtsFiles.map((f) =>
+    cp(f, f.replace(`${memfsLibFolder}/`, ""), { recursive: true })
+  )
+);
