@@ -1,6 +1,6 @@
 {
   "name": "@bundled-es-modules/memfs",
-  "version": "4.9.3",
+  "version": "4.9.4",
   "description": "mirror of memfs, bundled and exposed as ES module",
   "author": "Joren Broekema <joren.broekema@gmail.com>",
   "type": "module",
@@ -21,7 +21,7 @@
     "index-cjs.cjs",
     "**/*.d.ts"
   ],
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "assert": "^2.0.0",
     "buffer": "^6.0.3",
