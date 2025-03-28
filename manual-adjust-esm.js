@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, cp } from "node:fs/promises";
+import { readFile, writeFile, cp } from "node:fs/promises";
 import { glob } from "glob";
 
 const fileBefore = await readFile("./index-esm.js", "utf-8");
